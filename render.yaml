@@ -6,9 +6,6 @@ services:
     dockerfilePath: ./Dockerfile
     autoDeployTrigger: commit
     healthCheckPath: /up
-    disk:
-      name: sqlite-data
-      mountPath: /var/data
     envVars:
       - key: APP_NAME
         value: ElectraVote
@@ -16,10 +13,10 @@ services:
         value: production
       - key: APP_DEBUG
         value: "false"
-      - key: APP_URL
-        sync: false
       - key: APP_KEY
         generateValue: true
+      - key: APP_URL
+        sync: false
       - key: LOG_CHANNEL
         value: stderr
       - key: LOG_LEVEL
@@ -28,13 +25,19 @@ services:
         value: sqlite
       - key: DB_DATABASE
         value: /var/data/database.sqlite
-      - key: CACHE_STORE
-        value: database
       - key: SESSION_DRIVER
+        value: database
+      - key: SESSION_SECURE_COOKIE
+        value: "true"
+      - key: CACHE_STORE
         value: database
       - key: QUEUE_CONNECTION
         value: sync
-      - key: SESSION_SECURE_COOKIE
-        value: "true"
+      - key: FILESYSTEM_DISK
+        value: local
       - key: APP_MAINTENANCE_DRIVER
         value: file
+    disk:
+      name: sqlite-data
+      mountPath: /var/data
+      sizeGB: 1

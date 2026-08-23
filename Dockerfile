@@ -1,69 +1,49 @@
-FROM composer:2 AS vendor
-
-WORKDIR /app
-
-COPY composer.json composer.lock ./
-RUN composer install \
-    --no-dev \
-    --prefer-dist \
-    --no-interaction \
-    --no-progress \
-    --no-scripts \
-    --optimize-autoloader
-
-COPY . ./
-RUN composer install \
-    --no-dev \
-    --prefer-dist \
-    --no-interaction \
-    --no-progress \
-    --optimize-autoloader
-
-FROM node:22-alpine AS frontend
-
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-RUN npm ci
-
-COPY --from=vendor /app/vendor ./vendor
-COPY resources ./resources
-COPY public ./public
-COPY vite.config.js ./vite.config.js
-RUN npm run build
-
-FROM php:8.3-cli-alpine AS runtime
+FROM php:8.4-cli
 
 WORKDIR /var/www/html
 
-RUN apk add --no-cache \
-        icu-libs \
-        libzip \
-        oniguruma \
-        postgresql-libs \
-        sqlite-libs \
-    && apk add --no-cache --virtual .build-deps \
-        $PHPIZE_DEPS \
-        icu-dev \
-        libzip-dev \
-        oniguruma-dev \
-        postgresql-dev \
-        sqlite-dev \
-    && docker-php-ext-install \
-        bcmath \
-        pcntl \
-        pdo_pgsql \
-        pdo_sqlite \
-    && apk del .build-deps
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    unzip \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    libzip-dev \
+    sqlite3 \
+    libsqlite3-dev \
+    nodejs \
+    npm \
+    zip \
+    && docker-php-ext-install pdo pdo_sqlite mbstring exif pcntl gd zip
 
-COPY --from=vendor /app /var/www/html
-COPY --from=frontend /app/public/build /var/www/html/public/build
-COPY docker/start.sh /usr/local/bin/start-render
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-RUN chmod +x /usr/local/bin/start-render \
-    && mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
-    && chown -R www-data:www-data storage bootstrap/cache
+COPY . /var/www/html
 
-EXPOSE 10000
+ENV COMPOSER_PROCESS_TIMEOUT=900
 
-CMD ["start-render"]
+RUN mkdir -p /var/data \
+    storage/framework/cache \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs \
+    bootstrap/cache \
+    && touch /var/data/database.sqlite \
+    && for i in 1 2 3 4 5 6 7 8; do \
+        composer install --no-interaction --prefer-source --no-progress --optimize-autoloader --no-dev && break || { \
+            if [ "$i" -lt 8 ]; then \
+                echo "Composer install failed (attempt $i/8), retrying in $((i * 10))s..."; \
+                sleep $((i * 10)); \
+            else \
+                exit 1; \
+            fi; \
+        }; \
+    done \
+    && npm install \
+    && npm run build \
+    && php artisan view:cache
+
+EXPOSE 8000
+
+CMD ["sh", "./docker-start.sh"]
